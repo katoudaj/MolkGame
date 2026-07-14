@@ -57,7 +57,7 @@ namespace MolkGame
                         placementOffset.z + rowZOffset
                     );
                     skittle.transform.localRotation = Quaternion.Euler(0f, 0f, tilt);
-                    skittle.transform.localScale = new Vector3(0.06f, 0.15f, 0.06f);
+                    skittle.transform.localScale = skittlePrefab.transform.localScale;
                 }
             }
         }
