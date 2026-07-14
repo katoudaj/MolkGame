@@ -1,3 +1,5 @@
+using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace MolkGame
@@ -38,12 +40,13 @@ namespace MolkGame
 
             int totalRows = Mathf.Min(rows, rowCounts.Length);
             float sharedCenterX = 0f;
+            List<GameObject> placedPins = new List<GameObject>();
 
             for (int row = 0; row < totalRows; row++)
             {
                 int columns = rowCounts[row];
                 float rowZOffset = row * rowSpacing;
-                float tilt = (row % 2 == 0) ? -pinTiltAngle : pinTiltAngle;
+                float tilt = Application.isPlaying ? 0f : ((row % 2 == 0) ? -pinTiltAngle : pinTiltAngle);
                 float rowCenterOffset = (columns - 1) * pinSpacing * 0.5f;
 
                 for (int column = 0; column < columns; column++)
@@ -51,14 +54,30 @@ namespace MolkGame
                     GameObject skittle = Instantiate(skittlePrefab, transform);
                     skittle.name = $"Skittle_{row}_{column}";
                     float xPosition = (column * pinSpacing) - rowCenterOffset;
-                    skittle.transform.localPosition = new Vector3(
+                    Vector3 localPosition = new Vector3(
                         placementOffset.x + xPosition + sharedCenterX,
                         placementOffset.y + row * pinHeightOffset,
                         placementOffset.z + rowZOffset
                     );
+
+                    skittle.transform.localPosition = localPosition;
                     skittle.transform.localRotation = Quaternion.Euler(0f, 0f, tilt);
                     skittle.transform.localScale = skittlePrefab.transform.localScale;
+                    skittle.transform.SetSiblingIndex(0);
+
+                    if (Application.isPlaying)
+                    {
+                        // 生成直後の衝突・回転でピンが一瞬でズレるのを防ぐため、配置完了後に物理を有効化する。
+                        PreparePinForPlacement(skittle);
+                        placedPins.Add(skittle);
+                    }
                 }
+            }
+
+            if (Application.isPlaying)
+            {
+                Physics.SyncTransforms();
+                StartCoroutine(ActivatePlacedPins(placedPins));
             }
         }
 
@@ -76,6 +95,63 @@ namespace MolkGame
                     DestroyImmediate(child.gameObject);
                 }
             }
+        }
+
+        private static void PreparePinForPlacement(GameObject pin)
+        {
+            // 物理演算を一時停止して、配置中にコライダーが衝突を起こさないようにする。
+            Rigidbody[] rigidbodies = pin.GetComponentsInChildren<Rigidbody>(true);
+            Collider[] colliders = pin.GetComponentsInChildren<Collider>(true);
+
+            foreach (Rigidbody rigidbody in rigidbodies)
+            {
+                rigidbody.isKinematic = true;
+                rigidbody.linearVelocity = Vector3.zero;
+                rigidbody.angularVelocity = Vector3.zero;
+                rigidbody.ResetCenterOfMass();
+                rigidbody.ResetInertiaTensor();
+                rigidbody.Sleep();
+            }
+
+            foreach (Collider collider in colliders)
+            {
+                collider.enabled = false;
+            }
+        }
+
+        private IEnumerator ActivatePlacedPins(IEnumerable<GameObject> pins)
+        {
+            yield return new WaitForSeconds(0.1f);
+            Physics.SyncTransforms();
+
+            foreach (GameObject pin in pins)
+            {
+                if (pin == null)
+                {
+                    continue;
+                }
+
+                // 配置完了後にまとめて物理を再開し、初期状態の不安定さを避ける。
+
+                Rigidbody[] rigidbodies = pin.GetComponentsInChildren<Rigidbody>(true);
+                Collider[] colliders = pin.GetComponentsInChildren<Collider>(true);
+
+                foreach (Collider collider in colliders)
+                {
+                    collider.enabled = true;
+                }
+
+                foreach (Rigidbody rigidbody in rigidbodies)
+                {
+                    rigidbody.isKinematic = false;
+                    rigidbody.linearVelocity = Vector3.zero;
+                    rigidbody.angularVelocity = Vector3.zero;
+                    rigidbody.WakeUp();
+                }
+            }
+
+            yield return null;
+            Physics.SyncTransforms();
         }
     }
 }
